@@ -1,20 +1,20 @@
-name: 🚀 Ekstrak ZIP, Supabase Online & Build APK
+name: Ekstrak ZIP, Supabase Online & Build APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
   pull_request:
-    branches: [main, master]
+    branches: [ main, master ]
   workflow_dispatch:
     inputs:
       supabase_url:
-        description: "Supabase Project URL (contoh: https://xxxx.supabase.co)"
+        description: 'Supabase Project URL (contoh: https://xxxx.supabase.co)'
         required: false
-        default: ""
+        default: ''
       supabase_anon_key:
-        description: "Supabase Anon Key (eyJhbGci...)"
+        description: 'Supabase Anon Key (eyJhbGci...)'
         required: false
-        default: ""
+        default: ''
 
 permissions:
   contents: write
@@ -27,80 +27,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 1. Checkout Repository
+      - name: 📥 1. Checkout Repositori
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 📦 2. Deteksi & Ekstrak ZIP Project
-        shell: bash
+      - name: 📦 2. Deteksi & Ekstrak File ZIP Otomatis (Jika Ada)
         run: |
-          set -e
+          echo "🔍 Memeriksa apakah ada file .zip di repositori..."
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
 
-          echo "🔍 Mencari file ZIP project..."
-          ZIP_FILE="$(find . -type f -iname '*.zip' \ -not -path './.git/*' \ -not -path './output_builds/*' \ | head -n 1)"
+          if [ -n "$ZIP_FILE" ]; then
+            echo "📦 Ditemukan file arsip: $ZIP_FILE. Mengekstrak sekarang..."
+            mkdir -p temp_zip_extracted
+            unzip -q -o "$ZIP_FILE" -d temp_zip_extracted
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ ERROR: File ZIP project tidak ditemukan."
-            echo "Upload tgp-management-fixed-nocompress.zip ke ROOT repository GitHub."
-            echo "Isi repository saat ini:"
+            # Cari letak package.json di dalam hasil ekstrak
+            PKG_DIR=$(find temp_zip_extracted -name "package.json" -exec dirname {} \; | head -n 1)
+            if [ -n "$PKG_DIR" ]; then
+              echo "Memindahkan berkas dari $PKG_DIR ke root repositori..."
+              if [ -d "$PKG_DIR/.github" ]; then
+                mkdir -p .github/workflows
+                cp -rf "$PKG_DIR/.github/workflows/"* .github/workflows/ 2>/dev/null || true
+                rm -rf "$PKG_DIR/.github"
+              fi
+              cp -rT "$PKG_DIR" .
+            else
+              cp -rT temp_zip_extracted .
+            fi
+            rm -rf temp_zip_extracted
+            echo "✅ Ekstraksi ZIP selesai!"
+          else
+            echo "ℹ️ Tidak ada file .zip. Menggunakan file yang sudah ada di repositori."
+          fi
+
+      - name: 🔍 3. Verifikasi Keberadaan Proyek
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "❌ ERROR: File 'package.json' tidak ditemukan di root repositori!"
+            echo "Pastikan Anda sudah mengunggah file ZIP dari AI Studio ke repositori ini."
             ls -la
             exit 1
           fi
-
-          echo "✅ ZIP ditemukan: $ZIP_FILE"
-
-          rm -rf temp_zip_extracted
-          mkdir -p temp_zip_extracted
-
-          echo "📦 Mengekstrak ZIP..."
-          unzip -q -o "$ZIP_FILE" -d temp_zip_extracted
-
-          echo "🔎 Mencari package.json..."
-          PKG_FILE="$(find temp_zip_extracted -type f -name 'package.json' | head -n 1)"
-
-          if [ -z "$PKG_FILE" ]; then
-            echo "❌ ERROR: package.json tidak ditemukan di dalam ZIP."
-            echo "Isi hasil ekstraksi:"
-            find temp_zip_extracted -maxdepth 3 -type f | sort | head -n 100
-            exit 1
-          fi
-
-          PKG_DIR="$(dirname "$PKG_FILE")"
-          echo "✅ package.json ditemukan di: $PKG_FILE"
-
-          # Salin seluruh isi folder project ke root repository.
-          # Ini tetap mempertahankan file tersembunyi seperti .env.example,
-          # .gitignore, dan .github jika memang ada di dalam ZIP.
-          cp -a "$PKG_DIR"/. .
-
-          rm -rf temp_zip_extracted
-
-          echo "📁 Struktur root setelah ekstraksi:"
-          ls -la
-
-      - name: 🔍 3. Verifikasi Project
-        shell: bash
-        run: |
-          set -e
-
-          if [ ! -f package.json ]; then
-            echo "❌ ERROR: package.json tidak ditemukan di root repository setelah ekstraksi."
-            exit 1
-          fi
-
-          echo "✅ package.json ditemukan."
-
-          if [ ! -f index.html ]; then
-            echo "⚠️ Peringatan: index.html tidak ditemukan."
-          fi
-
-          if [ ! -d src ]; then
-            echo "❌ ERROR: folder src tidak ditemukan."
-            exit 1
-          fi
-
-          echo "✅ Struktur project React/Vite terdeteksi."
+          echo "✅ Proyek valid (package.json ditemukan)."
 
       - name: 🔑 4. Siapkan Kredensial Supabase (.env)
         env:
@@ -110,12 +79,108 @@ jobs:
           SECRET_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
           VAR_URL: ${{ vars.VITE_SUPABASE_URL || vars.SUPABASE_URL }}
           VAR_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
-        shell: bash
         run: |
-          set -e
-
           FINAL_URL="${INPUT_URL:-${SECRET_URL:-$VAR_URL}}"
           FINAL_KEY="${INPUT_KEY:-${SECRET_KEY:-$VAR_KEY}}"
 
           if [ -z "$FINAL_URL" ] && [ -f ".env" ]; then
-            FINAL_URL="$(grep '^VITE_SUPABASE_URL=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)" fi if [ -z "$FINAL_KEY" ] && [ -f ".env" ]; then FINAL_KEY="$(grep '^VITE_SUPABASE_ANON_KEY=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)" fi if [ -n "$FINAL_URL" ] && [ -n "$FINAL_KEY" ]; then echo "✅ Kredensial Supabase tersedia." { echo "VITE_SUPABASE_URL=$FINAL_URL" echo "VITE_SUPABASE_ANON_KEY=$FINAL_KEY" } > .env cp .env .env.production else echo "⚠️ Kredensial Supabase belum diisi." echo "Aplikasi tetap akan dicoba untuk dibuild." fi - name: 🟢 5. Setup Node.js v20 uses: actions/setup-node@v4 with: node-version: 20 cache: npm cache-dependency-path: package-lock.json - name: ☕ 6. Setup Java JDK 21 uses: actions/setup-java@v4 with: distribution: temurin java-version: "21" - name: 📱 7. Setup Android SDK uses: android-actions/setup-android@v3 - name: 📦 8. Install Dependencies & Capacitor shell: bash run: | set -e if [ -f package-lock.json ]; then npm ci --legacy-peer-deps else npm install --legacy-peer-deps fi npm install --save-dev \ @capacitor/core \ @capacitor/cli \ @capacitor/android \ --legacy-peer-deps - name: 🌐 9. Build Web Application shell: bash run: | set -e npm run build if [ ! -d dist ]; then echo "❌ ERROR: folder dist tidak terbentuk." exit 1 fi echo "✅ Web berhasil dibuild." du -sh dist - name: 🤖 10. Build Android APK shell: bash run: | set -e echo "📱 Menyiapkan Capacitor..." if [ ! -f capacitor.config.ts ] && [ ! -f capacitor.config.json ]; then npx cap init "TGP Management" "com.tgp.management" --web-dir dist fi if [ ! -d android ]; then npx cap add android fi npx cap sync android cd android chmod +x gradlew ./gradlew assembleDebug --no-daemon cd .. mkdir -p output_builds APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk" if [ ! -f "$APK_PATH" ]; then echo "❌ ERROR: APK tidak ditemukan." exit 1 fi cp "$APK_PATH" output_builds/TGP-Management-Online.apk echo "📦 Membuat Web ZIP..." cd dist zip -r ../output_builds/tgp-management-web.zip . cd .. echo "✅ APK dan Web ZIP siap." ls -lh output_builds/ - name: 📤 11. Upload Artifact Android APK uses: actions/upload-artifact@v4 with: name: TGP-Management-APK path: output_builds/TGP-Management-Online.apk retention-days: 30 - name: 📤 12. Upload Artifact Web uses: actions/upload-artifact@v4 with: name: TGP-Management-Web path: output_builds/tgp-management-web.zip retention-days: 30 - name: 🚀 13. Deploy Web ke GitHub Pages continue-on-error: true uses: peaceiris/actions-gh-pages@v4 with: github_token: ${{ secrets.GITHUB_TOKEN }} publish_dir: ./dist force_orphan: true - name: 🏷️ 14. Buat GitHub Release continue-on-error: true uses: softprops/action-gh-release@v2 with: tag_name: v1.0.${{ github.run_number }} name: Release TGP Management v1.0.${{ github.run_number }} body: | ## 🚀 TGP Management - Build Online Siap Pakai - **Android APK**: TGP-Management-Online.apk - **Web ZIP**: tgp-management-web.zip files: | output_builds/TGP-Management-Online.apk output_builds/tgp-management-web.zip env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            FINAL_URL=$(grep '^VITE_SUPABASE_URL=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+          fi
+          if [ -z "$FINAL_KEY" ] && [ -f ".env" ]; then
+            FINAL_KEY=$(grep '^VITE_SUPABASE_ANON_KEY=' .env | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+          fi
+
+          if [ -n "$FINAL_URL" ] && [ -n "$FINAL_KEY" ]; then
+            echo "✅ Kredensial Supabase terpasang! Menulis ke .env dan .env.production..."
+            echo "VITE_SUPABASE_URL=$FINAL_URL" > .env
+            echo "VITE_SUPABASE_ANON_KEY=$FINAL_KEY" >> .env
+            cp .env .env.production
+          else
+            echo "⚠️ Catatan: Kredensial Supabase belum diisi. Aplikasi tetap berjalan dan bisa dihubungkan via menu Pengaturan."
+          fi
+
+      - name: 🟢 5. Setup Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package.json
+
+      - name: ☕ 6. Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 📱 7. Setup Android SDK Command-line Tools
+        uses: android-actions/setup-android@v3
+
+      - name: 📦 8. Install Dependensi & Capacitor
+        run: |
+          npm install --legacy-peer-deps || npm install
+          npm install --save-dev @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
+
+      - name: 🌐 9. Build Web Application (dist/)
+        run: npm run build
+
+      - name: 🤖 10. Inisialisasi Capacitor & Build Android APK
+        run: |
+          echo "📱 Setup Platform Android..."
+          npx cap init "TGP Management" "com.tgp.management" --web-dir dist 2>/dev/null || true
+          npx cap add android 2>/dev/null || echo "Folder android sudah ada."
+          npx cap sync android
+
+          echo "🔧 Memperbaiki konfigurasi Gradle..."
+          echo "allprojects { configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' } }" >> android/build.gradle
+          echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> android/app/build.gradle
+          echo "android.enableJetifier=true" >> android/gradle.properties
+
+          echo "🔨 Mengompilasi APK Debug..."
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cd ..
+
+          mkdir -p output_builds
+          cp android/app/build/outputs/apk/debug/app-debug.apk output_builds/TGP-Management-Online.apk
+          zip -r output_builds/tgp-management-web.zip dist/
+          echo "✅ File APK dan Web ZIP siap!"
+          ls -lh output_builds/
+
+      - name: 📤 11. Upload Artifact Android APK (.apk)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TGP-Management-APK
+          path: output_builds/TGP-Management-Online.apk
+          retention-days: 30
+
+      - name: 📤 12. Upload Artifact Web ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: TGP-Management-Web
+          path: output_builds/tgp-management-web.zip
+          retention-days: 30
+
+      - name: 🚀 13. Deploy Web ke GitHub Pages (Online di Web Browser)
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
+
+      - name: 🏷️ 14. Buat GitHub Release Otomatis (Link Download Langsung)
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release TGP Management v1.0.${{ github.run_number }}
+          body: |
+            ## 🚀 TGP Management - Build Online Siap Pakai
+            - **Android APK**: Unduh `TGP-Management-Online.apk` untuk HP Android.
+            - **Web ZIP**: Unduh `tgp-management-web.zip` untuk hosting Web / cPanel / Vercel.
+          files: |
+            output_builds/TGP-Management-Online.apk
+            output_builds/tgp-management-web.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
